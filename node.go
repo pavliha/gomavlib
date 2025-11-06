@@ -38,6 +38,16 @@ type writeExceptReq struct {
 	what   interface{}
 }
 
+type addEndpointReq struct {
+	conf   EndpointConf
+	result chan error
+}
+
+type removeEndpointReq struct {
+	endpoint Endpoint
+	result   chan error
+}
+
 // NodeConf allows to configure a Node.
 //
 // Deprecated: configuration has been moved inside Node.
@@ -185,12 +195,15 @@ type Node struct {
 	nodeStreamRequest *nodeStreamRequest
 
 	// in
-	chNewChannel   chan *Channel
-	chCloseChannel chan *Channel
-	chWriteTo      chan writeToReq
-	chWriteAll     chan interface{}
-	chWriteExcept  chan writeExceptReq
-	terminate      chan struct{}
+	chNewChannel      chan *Channel
+	chCloseChannel    chan *Channel
+	chWriteTo         chan writeToReq
+	chWriteAll        chan interface{}
+	chWriteExcept     chan writeExceptReq
+	chAddEndpoint     chan addEndpointReq
+	chRemoveEndpoint  chan removeEndpointReq
+	terminate         chan struct{}
+	endpointsMutex    sync.RWMutex
 
 	// out
 	chEvent chan Event
@@ -256,6 +269,8 @@ func (n *Node) Initialize() error {
 	n.chWriteTo = make(chan writeToReq)
 	n.chWriteAll = make(chan interface{})
 	n.chWriteExcept = make(chan writeExceptReq)
+	n.chAddEndpoint = make(chan addEndpointReq)
+	n.chRemoveEndpoint = make(chan removeEndpointReq)
 	n.terminate = make(chan struct{})
 	n.chEvent = make(chan Event)
 	n.done = make(chan struct{})
@@ -364,6 +379,12 @@ outer:
 					ch.write(req.what)
 				}
 			}
+
+		case req := <-n.chAddEndpoint:
+			req.result <- n.addEndpoint(req.conf)
+
+		case req := <-n.chRemoveEndpoint:
+			req.result <- n.removeEndpoint(req.endpoint)
 
 		case <-n.terminate:
 			break outer
@@ -596,4 +617,99 @@ func (n *Node) closeChannel(ch *Channel) {
 	case n.chCloseChannel <- ch:
 	case <-n.terminate:
 	}
+}
+
+// AddEndpoint adds a new endpoint to the node at runtime.
+// The endpoint will be initialized and started immediately.
+// Returns an error if initialization fails.
+func (n *Node) AddEndpoint(conf EndpointConf) error {
+	result := make(chan error)
+	select {
+	case n.chAddEndpoint <- addEndpointReq{conf: conf, result: result}:
+		return <-result
+	case <-n.terminate:
+		return errTerminated
+	}
+}
+
+// RemoveEndpoint removes an endpoint from the node at runtime.
+// The endpoint will be closed and all its channels will be terminated.
+// Returns an error if the endpoint is not found.
+func (n *Node) RemoveEndpoint(endpoint Endpoint) error {
+	result := make(chan error)
+	select {
+	case n.chRemoveEndpoint <- removeEndpointReq{endpoint: endpoint, result: result}:
+		return <-result
+	case <-n.terminate:
+		return errTerminated
+	}
+}
+
+// GetEndpoints returns a list of all currently active endpoints.
+// This is a snapshot and the list may change after this function returns.
+func (n *Node) GetEndpoints() []Endpoint {
+	n.endpointsMutex.RLock()
+	defer n.endpointsMutex.RUnlock()
+
+	endpoints := make([]Endpoint, 0, len(n.channelProviders))
+	for cp := range n.channelProviders {
+		endpoints = append(endpoints, cp.endpoint)
+	}
+	return endpoints
+}
+
+// addEndpoint is the internal implementation that runs in the node's goroutine
+func (n *Node) addEndpoint(conf EndpointConf) error {
+	// Initialize the endpoint
+	endpoint, err := conf.init(n)
+	if err != nil {
+		return fmt.Errorf("failed to initialize endpoint: %w", err)
+	}
+
+	// Create channel provider
+	cp := &channelProvider{
+		node:     n,
+		endpoint: endpoint,
+	}
+	err = cp.initialize()
+	if err != nil {
+		endpoint.close()
+		return fmt.Errorf("failed to initialize channel provider: %w", err)
+	}
+
+	// Add to map and start
+	n.endpointsMutex.Lock()
+	n.channelProviders[cp] = struct{}{}
+	n.endpointsMutex.Unlock()
+
+	cp.start()
+
+	return nil
+}
+
+// removeEndpoint is the internal implementation that runs in the node's goroutine
+func (n *Node) removeEndpoint(endpoint Endpoint) error {
+	n.endpointsMutex.Lock()
+	defer n.endpointsMutex.Unlock()
+
+	// Find the channel provider for this endpoint
+	var targetCP *channelProvider
+	for cp := range n.channelProviders {
+		if cp.endpoint == endpoint {
+			targetCP = cp
+			break
+		}
+	}
+
+	if targetCP == nil {
+		return fmt.Errorf("endpoint not found")
+	}
+
+	// Remove from map
+	delete(n.channelProviders, targetCP)
+
+	// Close the channel provider (this will close the endpoint and all channels)
+	targetCP.close()
+
+	return nil
 }
