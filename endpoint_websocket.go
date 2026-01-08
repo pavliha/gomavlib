@@ -107,6 +107,11 @@ type EndpointWebSocket struct {
 
 	// State change callback (optional)
 	OnStateChange WebSocketStateCallback
+
+	// NetDialContext specifies a custom dial function for creating TCP connections.
+	// This is useful for routing through custom networks like Tailscale.
+	// If nil, the default dialer is used.
+	NetDialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 func (conf EndpointWebSocket) init(node *Node) (Endpoint, error) {
@@ -378,6 +383,7 @@ func (e *endpointWebSocket) connect() (*websocket.Conn, error) {
 		HandshakeTimeout: e.conf.HandshakeTimeout,
 		ReadBufferSize:   4096,
 		WriteBufferSize:  4096,
+		NetDialContext:   e.conf.NetDialContext,
 	}
 
 	headers := make(map[string][]string)
