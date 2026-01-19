@@ -3,7 +3,6 @@ package frame
 import (
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/aircast-one/gomavlib/v3/pkg/dialect"
 	"github.com/aircast-one/gomavlib/v3/pkg/message"
@@ -71,6 +70,9 @@ type Writer struct {
 	// (optional) dialect which contains the messages that will be written.
 	DialectRW *dialect.ReadWriter
 
+	// (optional) clock for time operations. Defaults to real time if nil.
+	Clock Clock
+
 	// Mavlink version used to encode messages.
 	//
 	// Deprecated: use streamwriter.Writer for writing messages.
@@ -111,6 +113,10 @@ func (w *Writer) Initialize() error {
 
 	if w.OutComponentID < 1 {
 		w.OutComponentID = 1
+	}
+
+	if w.Clock == nil {
+		w.Clock = DefaultClock()
 	}
 
 	w.bw = make([]byte, bufferSize)
@@ -182,7 +188,7 @@ func (w *Writer) writeFrameAndFill(fr Frame) error {
 	if ff, ok := fr.(*V2Frame); ok && w.OutKey != nil {
 		ff.SignatureLinkID = w.OutSignatureLinkID
 		// Timestamp in 10 microsecond units since 1st January 2015 GMT time
-		ff.SignatureTimestamp = uint64(time.Since(signatureReferenceDate)) / 10000
+		ff.SignatureTimestamp = uint64(w.Clock.Now().Sub(signatureReferenceDate)) / 10000
 		ff.Signature = ff.GenerateSignature(w.OutKey)
 	}
 

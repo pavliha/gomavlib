@@ -6,12 +6,20 @@ import (
 	"testing"
 	"time"
 
-	"bou.ke/monkey"
 	"github.com/aircast-one/gomavlib/v3/pkg/dialect"
 	"github.com/aircast-one/gomavlib/v3/pkg/frame"
 	"github.com/aircast-one/gomavlib/v3/pkg/message"
 	"github.com/stretchr/testify/require"
 )
+
+// mockClock is a test clock that returns a fixed time.
+type mockClock struct {
+	now time.Time
+}
+
+func (c mockClock) Now() time.Time {
+	return c.now
+}
 
 var testDialectRW = func() *dialect.ReadWriter {
 	d := &dialect.Dialect{
@@ -71,9 +79,8 @@ func (m *MessageTest8) GetID() uint32 {
 
 func TestWriteMessage(t *testing.T) {
 	// fake current time in order to obtain deterministic signatures
-	wayback := time.Date(2019, time.May, 18, 1, 2, 3, 4, time.UTC)
-	patch := monkey.Patch(time.Now, func() time.Time { return wayback })
-	defer patch.Unpatch()
+	fixedTime := time.Date(2019, time.May, 18, 1, 2, 3, 4, time.UTC)
+	clock := mockClock{now: fixedTime}
 
 	for _, ca := range []struct {
 		name string
@@ -126,6 +133,7 @@ func TestWriteMessage(t *testing.T) {
 				Version:     ca.ver,
 				SystemID:    1,
 				Key:         ca.key,
+				Clock:       clock,
 			}
 			err = nw.Initialize()
 			require.NoError(t, err)

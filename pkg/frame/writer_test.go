@@ -6,12 +6,20 @@ import (
 	"testing"
 	"time"
 
-	"bou.ke/monkey"
 	"github.com/stretchr/testify/require"
 
 	"github.com/aircast-one/gomavlib/v3/pkg/dialect"
 	"github.com/aircast-one/gomavlib/v3/pkg/message"
 )
+
+// mockClock is a test clock that returns a fixed time.
+type mockClock struct {
+	now time.Time
+}
+
+func (c mockClock) Now() time.Time {
+	return c.now
+}
 
 func TestWriterNewErrors(t *testing.T) {
 	_, err := NewWriter(WriterConf{
@@ -123,9 +131,8 @@ func TestWriterWriteErrors(t *testing.T) {
 
 func TestWriterWriteMessage(t *testing.T) {
 	// fake current time in order to obtain deterministic signatures
-	wayback := time.Date(2019, time.May, 18, 1, 2, 3, 4, time.UTC)
-	patch := monkey.Patch(time.Now, func() time.Time { return wayback })
-	defer patch.Unpatch()
+	fixedTime := time.Date(2019, time.May, 18, 1, 2, 3, 4, time.UTC)
+	clock := mockClock{now: fixedTime}
 
 	for _, c := range []struct {
 		name string
@@ -173,6 +180,7 @@ func TestWriterWriteMessage(t *testing.T) {
 				OutKey:      c.key,
 			})
 			require.NoError(t, err)
+			writer.Clock = clock
 
 			err = writer.WriteMessage(c.msg)
 			require.NoError(t, err)

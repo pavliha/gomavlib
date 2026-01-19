@@ -3,7 +3,6 @@ module github.com/aircast-one/gomavlib/v3
 go 1.24.0
 
 require (
-	bou.ke/monkey v1.0.2
 	github.com/alecthomas/kong v1.12.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/pion/transport/v2 v2.2.10

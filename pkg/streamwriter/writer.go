@@ -64,6 +64,8 @@ type Writer struct {
 	// (optional) secret key used to sign outgoing frames.
 	// This feature requires v2 frames.
 	Key *frame.V2Key
+	// (optional) clock for time operations. Defaults to real time if nil.
+	Clock frame.Clock
 
 	//
 	// private
@@ -85,6 +87,9 @@ func (w *Writer) Initialize() error {
 	}
 	if w.Key != nil && w.Version != V2 {
 		return fmt.Errorf("OutKey requires V2 frames")
+	}
+	if w.Clock == nil {
+		w.Clock = frame.DefaultClock()
 	}
 
 	return nil
@@ -150,7 +155,7 @@ func (w *Writer) writeInner(fr frame.Frame) error {
 	if ff, ok := fr.(*frame.V2Frame); ok && w.Key != nil {
 		ff.SignatureLinkID = w.SignatureLinkID
 		// Timestamp in 10 microsecond units since 1st January 2015 GMT time
-		ff.SignatureTimestamp = uint64(time.Since(signatureReferenceDate)) / 10000
+		ff.SignatureTimestamp = uint64(w.Clock.Now().Sub(signatureReferenceDate)) / 10000
 		ff.Signature = ff.GenerateSignature(w.Key)
 	}
 
