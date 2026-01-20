@@ -12,15 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockClock is a test clock that returns a fixed time.
-type mockClock struct {
-	now time.Time
-}
-
-func (c mockClock) Now() time.Time {
-	return c.now
-}
-
 var testDialectRW = func() *dialect.ReadWriter {
 	d := &dialect.Dialect{
 		Version: 3,
@@ -80,7 +71,7 @@ func (m *MessageTest8) GetID() uint32 {
 func TestWriteMessage(t *testing.T) {
 	// fake current time in order to obtain deterministic signatures
 	fixedTime := time.Date(2019, time.May, 18, 1, 2, 3, 4, time.UTC)
-	clock := mockClock{now: fixedTime}
+	clock := frame.MockClock{Time: fixedTime}
 
 	for _, ca := range []struct {
 		name string

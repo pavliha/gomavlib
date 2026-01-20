@@ -3,6 +3,9 @@ package frame
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"io"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -428,6 +431,60 @@ func TestReader(t *testing.T) {
 			require.Equal(t, ca.frame, frame)
 		})
 	}
+}
+
+func TestReaderWithRealTelemetry(t *testing.T) {
+	// Load real telemetry data captured from /dev/ttyACM0 at 57600 baud
+	data, err := os.ReadFile("testdata/real_telemetry.bin")
+	require.NoError(t, err, "Failed to load test data")
+	require.True(t, len(data) > 0, "Test data is empty")
+
+	reader, err := NewReader(ReaderConf{
+		Reader: bytes.NewReader(data),
+	})
+	require.NoError(t, err)
+
+	frameCount := 0
+	parseErrors := 0
+	var lastErr error
+
+	for {
+		frame, err := reader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				break
+			}
+			var eerr ReadError
+			if errors.As(err, &eerr) {
+				parseErrors++
+				lastErr = err
+				// Resync and continue
+				if _, resyncErr := reader.Resync(); resyncErr != nil {
+					break
+				}
+				continue
+			}
+			// Fatal error
+			break
+		}
+
+		frameCount++
+		require.NotNil(t, frame)
+
+		// Verify frame structure
+		switch f := frame.(type) {
+		case *V1Frame:
+			require.NotNil(t, f.Message)
+		case *V2Frame:
+			require.NotNil(t, f.Message)
+		}
+	}
+
+	t.Logf("Parsed %d frames with %d parse errors from %d bytes", frameCount, parseErrors, len(data))
+
+	// The real telemetry data should parse cleanly
+	require.Greater(t, frameCount, 0, "Should parse at least some frames")
+	require.Equalf(t, 0, parseErrors, "Clean telemetry data should have no parse errors, last error: %v", lastErr)
 }
 
 func TestReaderErrorSignatureTimestamp(t *testing.T) {

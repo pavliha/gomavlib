@@ -12,15 +12,6 @@ import (
 	"github.com/aircast-one/gomavlib/v3/pkg/message"
 )
 
-// mockClock is a test clock that returns a fixed time.
-type mockClock struct {
-	now time.Time
-}
-
-func (c mockClock) Now() time.Time {
-	return c.now
-}
-
 func TestWriterNewErrors(t *testing.T) {
 	_, err := NewWriter(WriterConf{
 		OutVersion:  V2,
@@ -132,7 +123,7 @@ func TestWriterWriteErrors(t *testing.T) {
 func TestWriterWriteMessage(t *testing.T) {
 	// fake current time in order to obtain deterministic signatures
 	fixedTime := time.Date(2019, time.May, 18, 1, 2, 3, 4, time.UTC)
-	clock := mockClock{now: fixedTime}
+	clock := MockClock{Time: fixedTime}
 
 	for _, c := range []struct {
 		name string

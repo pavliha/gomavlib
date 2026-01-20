@@ -19,3 +19,13 @@ func (realClock) Now() time.Time {
 func DefaultClock() Clock {
 	return realClock{}
 }
+
+// MockClock is a test clock that returns a fixed time.
+type MockClock struct {
+	Time time.Time
+}
+
+// Now returns the fixed time.
+func (c MockClock) Now() time.Time {
+	return c.Time
+}
